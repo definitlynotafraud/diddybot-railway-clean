@@ -1,38 +1,46 @@
 import os
-import json
 import discord
 from discord.ext import commands
 from discord import app_commands
+import json
 
-# -----------------------------
-# Load token from environment
-# -----------------------------
-TOKEN = os.getenv("TOKEN")
+# Load token from environment variable
+TOKEN = os.getenv("TOKEN")  # Railway should have this variable set
 
-# -----------------------------
-# Intents and Bot Setup
-# -----------------------------
+# Intents
 intents = discord.Intents.default()
 intents.message_content = True
+
+# Bot setup
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# -----------------------------
-# Load / Initialize Counters
-# -----------------------------
-COUNTERS_FILE = "diddify_counters.json"
-
-try:
-    with open(COUNTERS_FILE, "r") as f:
+# Load diddify/oilup/kill counts from file
+counts_file = "diddify_counts.json"
+if os.path.exists(counts_file):
+    with open(counts_file, "r") as f:
         counts = json.load(f)
-except FileNotFoundError:
-    counts = {}  # empty dictionary if file doesn't exist
-
-def save_counts():
-    with open(COUNTERS_FILE, "w") as f:
-        json.dump(counts, f, indent=4)
+else:
+    counts = {}
 
 # -----------------------------
-# Bot Ready Event
+#        UTILITY FUNCTION
+# -----------------------------
+async def do_action(interaction: discord.Interaction, user: discord.User, action: str):
+    user_id = str(user.id)
+    if user_id not in counts:
+        counts[user_id] = {"diddify": 0, "oilup": 0, "kill": 0}
+    counts[user_id][action] += 1
+
+    # Save counts
+    with open(counts_file, "w") as f:
+        json.dump(counts, f)
+
+    await interaction.response.send_message(
+        f"{interaction.user.mention} {action}ed {user.mention}! Total {action}ed: {counts[user_id][action]}"
+    )
+
+# -----------------------------
+#        EVENTS
 # -----------------------------
 @bot.event
 async def on_ready():
@@ -44,45 +52,33 @@ async def on_ready():
         print(e)
 
 # -----------------------------
-# Helper to increment counters
-# -----------------------------
-def increment_counter(user_id, action):
-    if str(user_id) not in counts:
-        counts[str(user_id)] = {"diddify": 0, "oilup": 0, "kill": 0}
-    counts[str(user_id)][action] += 1
-    save_counts()
-    return counts[str(user_id)][action]
-
-# -----------------------------
-# Slash Commands
+#        SLASH COMMANDS
 # -----------------------------
 
 # /diddify
 @bot.tree.command(name="diddify", description="diddify someone")
-async def diddify(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    total = increment_counter(user_id, "diddify")
-    await interaction.response.send_message(f"{interaction.user.mention} got diddified! Total diddifies: {total}")
+@app_commands.describe(user="Who do you want to diddify?")
+async def diddify(interaction: discord.Interaction, user: discord.User = None):
+    if user is None:
+        user = interaction.user
+    await do_action(interaction, user, "diddify")
 
 # /oilup
 @bot.tree.command(name="oilup", description="oil someone up")
-async def oilup(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    total = increment_counter(user_id, "oilup")
-    await interaction.response.send_message(f"{interaction.user.mention} got oiled up! Total oil-ups: {total}")
+@app_commands.describe(user="Who do you want to oil up?")
+async def oilup(interaction: discord.Interaction, user: discord.User = None):
+    if user is None:
+        user = interaction.user
+    await do_action(interaction, user, "oilup")
 
 # /kill
 @bot.tree.command(name="kill", description="kill someone (funny command)")
 @app_commands.describe(user="Who do you want to kill?")
 async def kill(interaction: discord.Interaction, user: discord.User = None):
-    user_id = interaction.user.id
-    total = increment_counter(user_id, "kill")
     if user is None:
-        await interaction.response.send_message(f"{interaction.user.mention} killed themselves 💀 Total kills: {total}")
-    else:
-        await interaction.response.send_message(f"{interaction.user.mention} killed {user.mention} 💀 Total kills: {total}")
+        user = interaction.user
+    await do_action(interaction, user, "kill")
 
 # -----------------------------
-# Run Bot
-# -----------------------------
+
 bot.run(TOKEN)
